@@ -1,0 +1,1 @@
+python /home/shitao/dss2023/PA7/MachineTranslation.py  # change this to your own path and try with different hyperparameter settings
