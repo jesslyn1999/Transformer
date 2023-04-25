@@ -205,14 +205,17 @@ class MachineTranslation():
         self.get_optimizers()
         self.get_loss_fn()
 
+        print("NUM EPOCH: ", self.num_epochs)
+
         for e in range(self.num_epochs):
+            print("epoch-", e)
             train_loss = self.train_transformer_per_epoch(self.train_dataloader, True)
             with torch.no_grad():
                 valid_loss = self.train_transformer_per_epoch(self.valid_dataloader, False)
             print('Epoch {}: train loss {} valid loss {}'.format(e + 1, round(train_loss, 4), round(valid_loss, 4)))
             self.scheduler.step(valid_loss)
         
-        torch.save(self.model.state_dict(), '/home/shitao/dss2023/PA7/checkpoints/model.pt') # change this to your own path
+        torch.save(self.model.state_dict(), './checkpoints/model.pt') # change this to your own path
         self.evaluate_transformer()
     
 
@@ -258,9 +261,6 @@ def get_args():
     (options, _) = parser.parse_args()
 
     return options
-    
-    
-
 
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

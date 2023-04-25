@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import math
+
 
 
 
@@ -28,10 +30,34 @@ class Attention(nn.Module):
         mask: a Boolean variable. mask is set to be True when calculating the masked multi-head attention in the decoder. 
         '''
         ## TO DO
-        att = torch.zeros(Q.shape[0], Q.shape[1], V.shape[-1]).to(self.device)
+        # att = torch.zeros(Q.shape[0], Q.shape[1], V.shape[-1]).to(self.device)
 
-        return att
-    
+        QK = torch.bmm(Q, K.transpose(1, 2))  # shape: (batch_size, seq_len, seq_len)
+        scaling_factor = torch.sqrt(torch.tensor(K.shape[-1], dtype=torch.float32, device=self.device))
+        QK_scaled = QK / scaling_factor
+        if mask:
+            mask = torch.tril(torch.ones(QK_scaled.size(-2), QK_scaled.size(-1), device=self.device)).bool()
+            QK_scaled.masked_fill_(mask, -float('inf'))
+        attn_weights = torch.softmax(QK_scaled, dim=-1)  # shape: (batch_size, seq_len, seq_len)
+        attn_output = torch.bmm(attn_weights, V)  # shape: (batch_size, seq_len, V_dim)
+        return attn_output.to(self.device)
+
+        """
+
+        d_k = Q.size(-1)
+        # Compute dot product of query and key for each head
+        attn_logits = torch.matmul(Q, K.transpose(-2, -1)) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+        # Apply mask
+        if mask is not None:
+            attn_logits = attn_logits.masked_fill(mask == 0, -1e9)
+        # Apply softmax activation function
+        attn_weights = torch.softmax(attn_logits, dim=-1)
+        # Multiply weights by values
+        output = torch.matmul(attn_weights, V)
+
+        return output, attn_weights
+        """
+
 
     def forward(self, query, key, value, mask):
         '''
@@ -70,7 +96,11 @@ class MultiHeadAttention(nn.Module):
     # where head_i = Attention(query, key, value, mask) and W is a projection matrix.
     def forward(self, query, key, value, mask):
         ## TO DO
-        multihead_attention = torch.zeros(query.shape[0], query.shape[1], self.model_dim).to(self.device)
+        # multihead_attention = torch.zeros(query.shape[0], query.shape[1], self.model_dim).to(self.device)
+
+        attention_heads_output = [self.attention_heads[i](query, key, value, mask) for i in range(self.num_heads)]
+        concat_attention_heads_output = torch.cat(attention_heads_output, dim=-1)
+        multihead_attention = self.projection_matrix(concat_attention_heads_output)
 
         return multihead_attention
 
@@ -90,7 +120,16 @@ class PositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
         ## TO DO
         ## Hint: tensor slicing and torch.arange() might be useful here. 
-        self.pos_encoding = torch.zeros(max_len, model_dim).to(device)
+        pos = torch.arange(max_len).unsqueeze(1)
+        div = torch.exp(torch.arange(0, model_dim, 2).float() * (-math.log(10000.0) / model_dim))
+        self.pos_encoding = torch.zeros((1, max_len, model_dim)).to(device)
+        self.pos_encoding[0, :, 0::2] = torch.sin(pos * div)
+        self.pos_encoding[0, :, 1::2] = torch.cos(pos * div)
+
+        print("MAX LENGTH and model dim")
+        print(max_len)
+        print(model_dim)
+        # self.register_buffer('pos_encoding', self.pos_encoding)
     
 
     def forward(self, x):
@@ -99,9 +138,11 @@ class PositionalEncoding(nn.Module):
         x.shape: (batch_size, seq_len, model_dim)
         '''
         seq_len = x.shape[1]
-        pos_info = self.pos_encoding.unsqueeze(0) # pos_info.shape: (1, max_len, model_dim)
+        # pos_info = self.pos_encoding.unsqueeze(0) # pos_info.shape: (1, max_len, model_dim)
+        pos_info = self.pos_encoding  # pos_info.shape: (1, max_len, model_dim)
+        # print("POS INFO shape", pos_info.size())
 
-        return self.dropout(x + pos_info[:, :seq_len, :])
+        return self.dropout(x + pos_info[:, :seq_len, :].to(x.device))
 
 
 
@@ -142,7 +183,8 @@ class AddAndNorm(nn.Module):
     ## where sublayer is the function implemented by the sub-layer itself. 
     def forward(self, x, sublayer):
         ## TO DO
-        output = torch.zeros(x.shape).to(self.device)
+        # output = torch.zeros(x.shape).to(self.device)
+        output = self.layer_norm(x + self.dropout(sublayer(x))).to(self.device)
 
         return output
 
